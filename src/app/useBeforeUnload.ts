@@ -1,140 +1,151 @@
-/// useBeforeUnload.ts
-'use client';
-import { useRouter } from 'next/navigation';
-import { useEffect, useId } from 'react';
-import { remove } from 'lodash-es';
+"use client";
+import { useRouter } from "next/navigation";
+import { useEffect, useId } from "react";
+import { remove } from "lodash-es";
 
 let isForceRouting = false;
 const activeIds: string[] = [];
 let lastKnownHref: string;
 
 export const useBeforeUnload = (isActive = true) => {
-    const id = useId();
+  const id = useId();
+  // Handle <Link> clicks & onbeforeunload(attemptimg to close/refresh browser)
+  useEffect(() => {
+    if (!isActive) return;
+    lastKnownHref = window.location.href;
 
-    // Handle <Link> clicks & onbeforeunload(attemptimg to close/refresh browser)
-    useEffect(() => {
-        if (!isActive) return;
+    activeIds.push(id);
+
+    // No need to double logic
+    if (activeIds.length > 1)
+      return () => {
+        remove(activeIds, (x) => x === id);
+      };
+
+    const handleAnchorClick = (e: Event) => {
+      const anchor = e.currentTarget as HTMLAnchorElement;
+      const targetUrl = anchor.href;
+      const currentUrl = window.location.href;
+
+      if (targetUrl !== currentUrl) {
+        if (anchor.getAttribute("data-beforeunload-force")) {
+          isForceRouting = true;
+        }
+
+        const res = beforeUnloadFn();
+        if (!res) e.preventDefault();
         lastKnownHref = window.location.href;
+      }
+    };
 
-        activeIds.push(id);
+    let anchorElements: HTMLAnchorElement[] = [];
 
-        const handleAnchorClick = (e: Event) => {
-            const targetUrl = (e.currentTarget as HTMLAnchorElement).href,
-                currentUrl = window.location.href;
+    const disconnectAnchors = () => {
+      anchorElements.forEach((anchor) => {
+        anchor.removeEventListener("click", handleAnchorClick);
+      });
+    };
 
-            if (targetUrl !== currentUrl) {
-                const res = beforeUnloadFn();
-                if (!res) e.preventDefault();
-                lastKnownHref = window.location.href;
-            }
-        };
+    const handleMutation = () => {
+      disconnectAnchors();
 
-        let anchorElements: HTMLAnchorElement[] = [];
+      anchorElements = Array.from(document.querySelectorAll("a[href]"));
+      anchorElements.forEach((anchor) => {
+        anchor.addEventListener("click", handleAnchorClick);
+      });
+    };
 
-        const disconnectAnchors = () => {
-            anchorElements.forEach((anchor) => {
-                anchor.removeEventListener('click', handleAnchorClick);
-            });
-        };
+    const mutationObserver = new MutationObserver(handleMutation);
+    mutationObserver.observe(document.body, { childList: true, subtree: true });
+    addEventListener("beforeunload", beforeUnloadFn);
 
-        const handleMutation = () => {
-            disconnectAnchors();
+    handleMutation(); // Also trigger right away.
 
-            anchorElements = Array.from(document.querySelectorAll('a[href]'));
-            anchorElements.forEach((anchor) => {
-                anchor.addEventListener('click', handleAnchorClick);
-            });
-        };
-
-        const mutationObserver = new MutationObserver(handleMutation);
-        mutationObserver.observe(document.body, { childList: true, subtree: true });
-        addEventListener('beforeunload', beforeUnloadFn);
-
-        return () => {
-            removeEventListener('beforeunload', beforeUnloadFn);
-            disconnectAnchors();
-            mutationObserver.disconnect();
-            remove(activeIds, (x) => x === id);
-        };
-    }, [isActive, id]);
+    return () => {
+      removeEventListener("beforeunload", beforeUnloadFn);
+      disconnectAnchors();
+      mutationObserver.disconnect();
+      remove(activeIds, (x) => x === id);
+    };
+  }, [isActive, id]);
 };
 
 const beforeUnloadFn = (event?: BeforeUnloadEvent) => {
-    if (isForceRouting) return true;
+  if (isForceRouting) return true;
 
-    const message = 'Discard unsaved changes?';
+  const message = "Discard unsaved changes?";
 
-    if (event) {
-        event.returnValue = message;
-        return message;
-    } else {
-        return confirm(message);
-    }
+  if (event) {
+    event.returnValue = message;
+    return message;
+  } else {
+    return confirm(message);
+  }
 };
 
 const BeforeUnloadProvider = ({ children }: React.PropsWithChildren) => {
-    const router = useRouter();
-    useEffect(() => {
-        lastKnownHref = window.location.href;
-    });
+  const router = useRouter();
+  useEffect(() => {
+    lastKnownHref = window.location.href;
+  });
 
-    // Hack nextjs13 popstate impl, so it will include route cancellation.
-    // This Provider has to be rendered in the layout phase wrapping the page.
-    useEffect(() => {
-        let nextjsPopStateHandler: (...args: any[]) => void;
+  // Hack nextjs13 popstate impl, so it will include route cancellation.
+  // This Provider has to be rendered in the layout phase wrapping the page.
+  useEffect(() => {
+    let nextjsPopStateHandler: (...args: any[]) => void;
 
-        function popStateHandler(...args: any[]) {
-            useBeforeUnload.ensureSafeNavigation(
-                () => {
-                    nextjsPopStateHandler(...args);
-                    lastKnownHref = window.location.href;
-                },
-                () => {
-                    router.replace(lastKnownHref, { scroll: false });
-                }
-            );
+    function popStateHandler(...args: any[]) {
+      useBeforeUnload.ensureSafeNavigation(
+        () => {
+          nextjsPopStateHandler(...args);
+          lastKnownHref = window.location.href;
+        },
+        () => {
+          router.replace(lastKnownHref, { scroll: false });
         }
+      );
+    }
 
-        addEventListener('popstate', popStateHandler);
-        const originalAddEventListener = window.addEventListener;
-        window.addEventListener = (...args: any[]) => {
-            if (args[0] === 'popstate') {
-                nextjsPopStateHandler = args[1];
-                window.addEventListener = originalAddEventListener;
-            } else {
-                // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-                // @ts-ignore
-                originalAddEventListener(...args);
-            }
-        };
+    addEventListener("popstate", popStateHandler);
+    const originalAddEventListener = window.addEventListener;
+    window.addEventListener = (...args: any[]) => {
+      if (args[0] === "popstate") {
+        nextjsPopStateHandler = args[1];
+        window.addEventListener = originalAddEventListener;
+      } else {
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore
+        originalAddEventListener(...args);
+      }
+    };
 
-        return () => {
-            window.addEventListener = originalAddEventListener;
-            removeEventListener('popstate', popStateHandler);
-        };
-    }, []);
+    return () => {
+      window.addEventListener = originalAddEventListener;
+      removeEventListener("popstate", popStateHandler);
+    };
+  }, [router]);
 
-    return children;
+  return children;
 };
 
 useBeforeUnload.Provider = BeforeUnloadProvider;
 
 useBeforeUnload.forceRoute = async (cb: () => void | Promise<void>) => {
-    try {
-        isForceRouting = true;
-        await cb();
-    } finally {
-        isForceRouting = false;
-    }
+  try {
+    isForceRouting = true;
+    await cb();
+  } finally {
+    isForceRouting = false;
+  }
 };
 
 useBeforeUnload.ensureSafeNavigation = (
-    onPerformRoute: () => void,
-    onRouteRejected?: () => void
+  onPerformRoute: () => void,
+  onRouteRejected?: () => void
 ) => {
-    if (activeIds.length === 0 || beforeUnloadFn()) {
-        onPerformRoute();
-    } else {
-        onRouteRejected?.();
-    }
+  if (activeIds.length === 0 || beforeUnloadFn()) {
+    onPerformRoute();
+  } else {
+    onRouteRejected?.();
+  }
 };

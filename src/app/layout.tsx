@@ -1,7 +1,7 @@
 import type {Metadata} from "next";
 import {Inter} from "next/font/google";
 import "./globals.css";
-import {useBeforeUnload} from "./useBeforeUnload";
+import { Provider } from "./Provider";
 
 const inter = Inter({subsets: ["latin"]});
 
@@ -16,9 +16,9 @@ export default function RootLayout({
 }>) {
     return (<html lang="en">
     <body className={inter.className}>
-    <useBeforeUnload.Provider>
+    <Provider>
         {children}
-    </useBeforeUnload.Provider>
+    </Provider>
     </body>
     </html>);
 }
