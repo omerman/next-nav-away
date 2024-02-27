@@ -1,0 +1,1 @@
+This is an attempt to adapt a [solution](https://github.com/vercel/next.js/discussions/32231#discussioncomment-7257154) to prevent users to navigate away before saving changes.
